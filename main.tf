@@ -28,8 +28,8 @@ variable "profile" {
 variable "bootstrap" {
   type = map(string)
   default = {
-    "master" : 3,
-    "worker" : 4
+    "master" : 1,
+    "worker" : 1
   }
 }
 
@@ -38,7 +38,16 @@ locals {
   for kind, scale in var.bootstrap:
     [for i in range(scale): "${kind}-${i}"]
   ])
+}
 
+resource "tls_private_key" "master_key" {
+  algorithm = "ECDSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_private_key" "node_key" {
+  algorithm = "ECDSA"
+  rsa_bits  = 4096
 }
 
 
@@ -55,4 +64,21 @@ resource "lxd_container" "server" {
   limits = {
     cpu = 2
   }
+}
+output "instances" {
+  value = lxd_container.server[*]
+}
+
+output "master_key" {
+  value = tls_private_key.master_key
+  sensitive = true
+}
+
+resource "lxd_container_file" "file1" {
+  depends_on = [lxd_container.server]
+  for_each = lxd_container.server
+  container_name     = each.value.name
+  target_file        = "/foo/bar.txt"
+  content = tls_private_key.master_key.private_key_pem
+  create_directories = true
 }
