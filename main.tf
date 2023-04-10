@@ -41,7 +41,7 @@ locals {
 }
 
 resource "tls_private_key" "master_key" {
-  algorithm = "ECDSA"
+  algorithm = "RSA"
   rsa_bits  = 4096
 }
 
@@ -51,10 +51,10 @@ resource "tls_private_key" "node_key" {
 }
 
 
-resource "lxd_container" "server" {
+resource "lxd_container" "servers" {
   for_each = toset(local.instances)
   name      = each.value
-  image     = "images:debian/10"
+  image     = "images:debian/11"
   ephemeral = false
   profiles  = ["default"]
   config = {
@@ -66,19 +66,59 @@ resource "lxd_container" "server" {
   }
 }
 output "instances" {
-  value = lxd_container.server[*]
+  value = [for i, j in lxd_container.servers: "${i}: ${j.ip_address}"]
 }
 
 output "master_key" {
-  value = tls_private_key.master_key
+  value = tls_private_key.master_key.private_key_pem
   sensitive = true
 }
 
-resource "lxd_container_file" "file1" {
-  depends_on = [lxd_container.server]
-  for_each = lxd_container.server
+resource "lxd_container_file" "files" {
+  depends_on = [lxd_container.servers]
+  for_each = lxd_container.servers
   container_name     = each.value.name
-  target_file        = "/foo/bar.txt"
-  content = tls_private_key.master_key.private_key_pem
+  target_file        = "/root/.ssh/authorized_keys"
+  content = tls_private_key.master_key.public_key_openssh
   create_directories = true
+}
+
+resource "null_resource" "provision" {
+  depends_on = [
+    lxd_container_file.files,
+    lxd_container.servers
+  ]
+
+  for_each = lxd_container.servers
+
+  connection {
+    type        = "ssh"
+    user        = "root"
+    host        = each.value.ip_address
+    private_key = tls_private_key.master_key.private_key_pem
+  }
+
+  provisioner "local-exec" {
+    command = "lxc exec ${each.value.name} -- apt-get update -qq"
+  }
+
+  provisioner "local-exec" {
+    command = "lxc exec ${each.value.name} -- apt-get install -y openssh-server"
+  }
+
+  provisioner "local-exec" {
+    command = "lxc exec ${each.value.name} -- sed -i -E 's/#?PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config"
+  }
+
+  provisioner "local-exec" {
+    command = "lxc exec ${each.value.name} -- systemctl restart ssh"
+  }
+
+
+
+  provisioner "remote-exec" {
+    inline = [
+      "hostname",
+    ]
+  }
 }
