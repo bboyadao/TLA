@@ -103,7 +103,7 @@ resource "null_resource" "provision" {
   }
 
   provisioner "local-exec" {
-    command = "lxc exec ${each.value.name} -- apt-get install -y openssh-server"
+    command = "lxc exec ${each.value.name} -- apt-get install -y openssh-server python3"
   }
 
   provisioner "local-exec" {
