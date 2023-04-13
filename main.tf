@@ -59,6 +59,10 @@ resource "lxd_container" "servers" {
   profiles  = ["default"]
   config = {
     "boot.autostart" = true
+    "security.nesting" = true
+    "security.syscalls.intercept.mknod" = true
+    "security.syscalls.intercept.setxattr" = true
+    "linux.kernel_modules" = "overlay, br_netfilter"
   }
 
   limits = {
@@ -121,4 +125,16 @@ resource "null_resource" "provision" {
       "hostname",
     ]
   }
+}
+
+resource "local_file" "hosts_cfg" {
+
+  content = templatefile("${path.module}/templates/hosts.tpl",
+  #todo: map nodes from var.bootstrap to inventory for ansible!
+    {
+      master = lxd_container.servers
+      worker = lxd_container.servers
+    }
+  )
+  filename = "./ansible/inventory/hosts.cfg"
 }
