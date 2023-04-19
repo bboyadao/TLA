@@ -1,0 +1,2 @@
+variable "servers" {}
+variable "bootstrap" {}
